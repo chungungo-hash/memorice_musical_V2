@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Memorice Musical v2.0 - Modo Discoteca + QR</title>
+  <link rel="stylesheet" href="./style.css" />
+  <!-- Librerías ligeras para QR y conexión en tiempo real P2P (PeerJS) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+  <!-- FONDO DISCOTECA ANIMADO -->
+  <div class="disco-bg" id="disco-bg">
+    <div class="disco-spotlights"></div>
+    <div class="disco-beams"></div>
+    <div class="disco-ball-wrapper">
+      <div class="disco-cord"></div>
+      <div class="disco-ball">
+        <div class="disco-tiles"></div>
+        <div class="disco-shine"></div>
+      </div>
+    </div>
+    <div class="disco-sparkles" id="disco-sparkles"></div>
+  </div>
+
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- =========================================================
+       MODO ANFITRIÓN (PC / TV)
+       ========================================================= -->
+  <div id="host-app" class="app-container">
+    <header class="app-header">
+      <h1>🪩 Memorice Musical <span class="v-badge">v2.0</span> 🎵</h1>
+      <p class="subtitle">Escanea el QR con tu celular para jugar o participa desde esta pantalla</p>
+    </header>
+
+    <!-- PANTALLA 1: CONFIGURACIÓN + QR DE SALA -->
+    <section id="screen-setup" class="screen active">
+      <div class="card">
+        <h2>1. Modalidad y Conexión por QR</h2>
+
+        <div class="mode-selector">
+          <button type="button" id="btn-mode-solo" class="mode-btn active" data-mode="solo">
+            👤 Individual (1 a 4)
+          </button>
+          <button type="button" id="btn-mode-team" class="mode-btn" data-mode="team">
+            👥 Por Equipos (1 a 4 parejas)
+          </button>
+        </div>
+
+        <!-- PANEL QR PARA CELULARES -->
+        <div class="qr-lobby-box">
+          <div class="qr-canvas-wrap">
+            <div id="qrcode"></div>
+          </div>
+          <div class="qr-info">
+            <div class="room-status-pill" id="host-conn-status">⏳ Iniciando sala inalámbrica...</div>
+            <h3>📱 Únete desde tu celular</h3>
+            <p class="hint">Escanea el código QR con la cámara de tu teléfono para elegir tu avatar y controlar los cuadros en tu turno.</p>
+            <div class="room-code-display">
+              Sala: <strong id="room-code-text">----</strong>
+              <button type="button" id="btn-copy-link" class="btn small secondary">🔗 Copiar enlace</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="participants-container" class="participants-list"></div>
+
+        <div class="actions-row">
+          <button type="button" id="btn-add-participant" class="btn secondary">
+            + Agregar participante manual
+          </button>
+          <button type="button" id="btn-to-music" class="btn primary">
+            Siguiente: Cargar Música →
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PANTALLA 2: PANEL DE ADMINISTRACIÓN DE MÚSICA (SOLO ANFITRIÓN) -->
+    <section id="screen-music" class="screen">
+      <div class="card">
+        <div class="music-header">
+          <div>
+            <h2>2. Selección de 10 Canciones (Anfitrión)</h2>
+            <p class="hint">Sube 10 archivos MP3 y define el segundo exacto donde empieza el extracto, o usa la demo.</p>
+          </div>
+          <div class="music-quick-actions">
+            <label class="btn secondary file-upload-label">
+              📂 Cargar MP3s (hasta 10)
+              <input type="file" id="bulk-audio-input" accept="audio/*" multiple hidden />
+            </label>
+            <button type="button" id="btn-load-demo" class="btn accent">
+              🎹 Usar 10 Melodías Demo
+            </button>
+          </div>
+        </div>
+
+        <div class="global-duration-bar">
+          <label for="clip-duration">Duración de cada extracto (segundos):</label>
+          <input type="number" id="clip-duration" min="2" max="30" value="6" />
+        </div>
+
+        <div id="tracks-list" class="tracks-grid"></div>
+
+        <p id="music-error" class="error-msg"></p>
+
+        <div class="actions-row">
+          <button type="button" id="btn-back-setup" class="btn secondary">
+            ← Volver
+          </button>
+          <button type="button" id="btn-start-game" class="btn primary">
+            🎲 Sortear Turno y Jugar
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PANTALLA 3: TABLERO DE JUEGO -->
+    <section id="screen-game" class="screen">
+      <div class="game-top-bar">
+        <div class="stat-pill">Parejas: <strong id="pairs-found">0 / 10</strong></div>
+        <div class="stat-pill">Intentos: <strong id="attempts-count">0</strong></div>
+        <div class="stat-pill">Tiempo: <strong id="game-timer">00:00</strong></div>
+        <button type="button" id="btn-stop-audio" class="btn small secondary">⏹ Silenciar</button>
+      </div>
+
+      <div id="turn-banner" class="turn-banner">
+        Turno de: <strong id="current-turn-name">-</strong>
+      </div>
+
+      <div id="scoreboard" class="scoreboard"></div>
+
+      <div id="board" class="game-board"></div>
+
+      <div class="actions-row center">
+        <button type="button" id="btn-abort-game" class="btn secondary small">
+          Salir al menú
+        </button>
+      </div>
+    </section>
+
+    <!-- PANTALLA 4: RESULTADOS Y PODIO -->
+    <section id="screen-results" class="screen">
+      <div class="card results-card">
+        <h2 id="winner-title">🏆 ¡Podio Final!</h2>
+        <p id="winner-subtitle" class="winner-banner"></p>
+
+        <div id="podium-container" class="podium-container"></div>
+
+        <div class="final-stats">
+          <span>Tiempo total: <strong id="final-time">00:00</strong></span>
+          <span>Intentos totales: <strong id="final-attempts">0</strong></span>
+        </div>
+
+        <div id="ranking-list" class="ranking-list"></div>
+
+        <div class="actions-row center">
+          <button type="button" id="btn-rematch" class="btn primary">
+            🔄 Revancha (Mismos equipos y música)
+          </button>
+          <button type="button" id="btn-new-setup" class="btn secondary">
+            ⚙️ Nueva Configuración
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- =========================================================
+       MODO CONTROL REMOTO CELULAR (CUANDO SE ENTRA CON ?room=...)
+       ========================================================= -->
+  <div id="client-app" class="app-container client-mode" style="display: none;">
+    <header class="app-header compact">
+      <h1>🪩 Mando Musical 🎵</h1>
+      <p class="subtitle" id="client-room-label">Conectando a sala...</p>
+    </header>
+
+    <!-- PASO A: REGISTRO EN EL CELULAR -->
+    <section id="client-join-screen" class="screen active">
+      <div class="card">
+        <h2>Únete a la partida</h2>
+        <p id="client-conn-msg" class="hint" style="margin-bottom: 14px;">⏳ Conectando con la pantalla principal...</p>
+
+        <div class="avatar-picker" style="margin-bottom: 14px;">
+          <span class="avatar-picker-label">Tu avatar:</span>
+          <div id="client-avatar-options" class="avatar-picker"></div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <label class="field-label">Tu nombre:</label>
+          <input type="text" id="client-name-input" placeholder="Escribe tu nombre" maxlength="18" />
+        </div>
+
+        <!-- Selector de equipo (solo visible si el anfitrión eligió Por Equipos) -->
+        <div id="client-team-selector" style="display: none; margin-bottom: 16px;">
+          <label class="field-label">Elige tu equipo:</label>
+          <div class="team-choice-grid" id="client-team-buttons">
+            <button type="button" class="mode-btn active" data-team="0">Equipo 1</button>
+            <button type="button" class="mode-btn" data-team="1">Equipo 2</button>
+            <button type="button" class="mode-btn" data-team="2">Equipo 3</button>
+            <button type="button" class="mode-btn" data-team="3">Equipo 4</button>
+          </div>
+          <input type="text" id="client-team-name-input" placeholder="Nombre del equipo (opcional)" style="margin-top: 8px;" />
+        </div>
+
+        <p id="client-join-error" class="error-msg"></p>
+
+        <button type="button" id="btn-client-join" class="btn primary" style="width: 100%; margin-top: 10px;" disabled>
+          🚀 Entrar al Juego
+        </button>
+      </div>
+    </section>
+
+    <!-- PASO B: SALA DE ESPERA EN EL CELULAR -->
+    <section id="client-wait-screen" class="screen">
+      <div class="card" style="text-align: center;">
+        <div id="client-ready-avatar" style="font-size: 3.5rem; margin-bottom: 8px;">🎸</div>
+        <h2 id="client-ready-name">¡Ya estás dentro!</h2>
+        <p id="client-ready-sub" class="hint" style="margin-bottom: 16px;">Esperando a que el anfitrión cargue las canciones e inicie la partida...</p>
+        <div class="stat-pill" style="display: inline-block;">Mira la pantalla principal 📺</div>
+      </div>
+    </section>
+
+    <!-- PASO C: CONTROL REMOTO DE 20 CUADROS EN EL CELULAR -->
+    <section id="client-pad-screen" class="screen">
+      <div id="client-turn-indicator" class="client-turn-box waiting">
+        Esperando turno...
+      </div>
+
+      <div class="client-score-bar">
+        <span id="client-my-badge">🎸 Jugador</span>
+        <span>Puntos: <strong id="client-my-score">0</strong></span>
+      </div>
+
+      <div id="client-pad-grid" class="client-pad-grid"></div>
+    </section>
+
+    <!-- PASO D: PANTALLA FINAL EN EL CELULAR -->
+    <section id="client-end-screen" class="screen">
+      <div class="card" style="text-align: center;">
+        <div id="client-end-medal" style="font-size: 4rem; margin-bottom: 8px;">🏆</div>
+        <h2 id="client-end-title">¡Partida Terminada!</h2>
+        <p id="client-end-summary" class="winner-banner" style="margin-top: 8px;"></p>
+        <p class="hint">Mira el podio completo en la pantalla principal. Si el anfitrión inicia revancha, tu mando volverá a activarse automáticamente.</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
